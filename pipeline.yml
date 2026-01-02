@@ -1,0 +1,54 @@
+name: Production Build & Deploy (VULNERABLE)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# VULNÉRABILITÉ 1 : Permissions globales excessives
+# Donner 'write-all' ouvre la porte à la modification de code malveillante
+permissions: write-all
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    
+    # VULNÉRABILITÉ 2 : Exécution privilégiée
+    # Le flag --privileged donne accès au kernel de l'hôte
+    container:
+      image: node:16
+      options: --privileged
+
+    # VULNÉRABILITÉ 3 : Secrets en clair (Hardcoded Secrets)
+    # SecFlowCheck doit détecter ces patterns (AWS, DB, General Token)
+    env:
+      AWS_ACCESS_KEY_ID: "AKIAIOSFODNN7EXAMPLE" 
+      AWS_SECRET_ACCESS_KEY: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+      DB_PASSWORD: "super_secret_password_123!"
+      STRIPE_API_KEY: "sk_live_51LbB7WIq8..."
+
+    steps:
+      # VULNÉRABILITÉ 4 : Action non épinglée (Unpinned Action)
+      # Utiliser @master ou @v3 au lieu d'un hash SHA rend vulnérable aux attaques Supply Chain
+      - name: Checkout Code
+        uses: actions/checkout@master
+
+      - name: Install Dependencies
+        run: npm install
+
+      # VULNÉRABILITÉ 5 : Injection potentielle & Secret dans le script
+      # Utilisation d'une variable sensible directement dans le shell
+      - name: Run Tests
+        run: |
+          echo "Running tests with DB_PASSWORD..."
+          ./run-tests.sh --password $DB_PASSWORD
+          
+      - name: Deploy to Production
+        # VULNÉRABILITÉ 4 (Répétition) : Tag mutable
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.HOST }}
+          username: "root" # Mauvaise pratique (Root user)
+          password: "admin_password" # Secret en clair dans les inputs
+          script: whoami
